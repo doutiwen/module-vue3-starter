@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "firefox",
+      "request": "launch",
+      "name": "Launch Firefox against localhost",
+      "url": "http://localhost:8088",
+      "webRoot": "${workspaceFolder}",
+      "pathMappings": [
+        { "url": "webpack:///./src/", "path": "${webRoot}/src/" },
+        { "url": "webpack:///src/", "path": "${webRoot}/src/" },
+        { "url": "/", "path": "${webRoot}/" }
+      ],
+      "skipFiles": [
+        "<node_internals>/**",
+        "**/node_modules/**"
+      ]
+    }
+  ]
+}
