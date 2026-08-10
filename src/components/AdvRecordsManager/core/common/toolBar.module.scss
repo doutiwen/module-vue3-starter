@@ -1,0 +1,18 @@
+.tool_bar_wrapper {
+  margin-bottom: 20px;
+  .toolBar_header {
+    margin-bottom: 12px;
+  }
+  .tool_bar_main {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 12px;
+    .tool_bar_side_left,
+    .tool_bar_side_right {
+      display: flex;
+      align-items: flex-end;
+      gap: 12px;
+    }
+  }
+}

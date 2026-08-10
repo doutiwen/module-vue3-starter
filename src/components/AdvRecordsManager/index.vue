@@ -4,15 +4,21 @@
     :toolBarConfig="innerToolBarConfig"
     v-bind="$attrs"
   >
-    <template v-for="(_, slotName) in $slots" #[slotName]="slotProps">
-      <slot :name="slotName" v-bind="slotProps || {}"></slot>
+    <template
+      v-for="(_, slotName) in $slots"
+      #[slotName]="slotProps"
+    >
+      <slot
+        :name="slotName"
+        v-bind="slotProps || {}"
+      ></slot>
     </template>
   </RecordsManager>
 </template>
 
 <script setup>
   import { useUserStore } from '@/store';
-  import RecordsManager from './core/ele/index.vue';
+  import RecordsManager from './core/ant/index.vue';
 
   const props = defineProps({
     toolBarConfig: {

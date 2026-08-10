@@ -1,4 +1,5 @@
 import predefineValidateRules from './predefineValidateRules.js';
+import { ref, computed, reactive, watch, onUnmounted, shallowRef } from 'vue';
 
 const advFormProps = {
   modelValue: {
@@ -9,6 +10,7 @@ const advFormProps = {
     required: true,
   },
 };
+
 const advFormEmits = ['update:modelValue', 'input', 'validateSuccess', 'validateFail'];
 
 const useAdvForm = (
@@ -19,23 +21,30 @@ const useAdvForm = (
   vModelKey = 'value'
 ) => {
   const watchManager = new WatchManager();
-  const formItemRowList = ref([]); // [[id,每一行样式,表单元素...]]
+
+  const formItemRowList = ref([]);
+
   const formItemDict = computed(() => {
     const dictInfo = {};
-    for (const row of formItemRowList.value) {
-      row.slice(2).forEach((item) => {
-        dictInfo[item.key] = item;
-      });
+    for (const item of formItemRowList.value) {
+      dictInfo[item.key] = item;
     }
     return dictInfo;
   });
+
   const formEleComponentProps = {};
+
   let currentInputKey;
+
+  const _config = toValue(config);
+
   const formItemHasDataTransform = (key) => {
     const formItemConfig = formItemDict.value[key];
     return typeof formItemConfig?.get === 'function' && typeof formItemConfig?.set === 'function';
   };
+
   const formDataState = reactive({});
+
   watch(
     modelValue,
     (n, o) => {
@@ -60,6 +69,7 @@ const useAdvForm = (
       immediate: true,
     }
   );
+
   watch(
     formDataState,
     (n, o) => {
@@ -73,28 +83,44 @@ const useAdvForm = (
       flush: 'sync',
     }
   );
+
   const validateRules = ref({});
+
   const formItemRef = new Map();
+
   const formEleComponentShowInfo = ref({});
+
   const formEleComponentOptionsInfo = {};
+
+  const formEleComponentAttrsInfo = {};
 
   const isOwnOptionsType = (type) => {
     return ['select', 'treeSelect', 'radio', 'checkbox'].includes(type);
   };
+
   const setFormItemRef = (formItemKey, ref) => {
     formItemRef.set(formItemKey, ref);
   };
+
   const getFormItemRef = (formItemKey) => {
     return formItemRef.get[formItemKey];
   };
+
   const formItemToggleShow = (key, newShowValue) => {};
+
   const validateConfigItemFormat = (sourceValidateItem, label) => {
     const targetValidateRuleItem = {};
     if (sourceValidateItem.type && Reflect.has(predefineValidateRules, sourceValidateItem.type)) {
+      const ruleFactory = predefineValidateRules[sourceValidateItem.type];
+      // 支持工厂函数类型的预定义规则（如 sameWith(targetFieldName)）
+      const ruleFromPredefine =
+        typeof ruleFactory === 'function'
+          ? ruleFactory(sourceValidateItem.targetFieldName)
+          : ruleFactory;
       Object.assign(
         targetValidateRuleItem,
         { type: sourceValidateItem.type },
-        predefineValidateRules[sourceValidateItem.type]
+        ruleFromPredefine
       );
     } else if (sourceValidateItem.type) {
       Object.assign(targetValidateRuleItem, { type: sourceValidateItem.type }, sourceValidateItem);
@@ -104,9 +130,13 @@ const useAdvForm = (
     if (typeof targetValidateRuleItem.notice === 'function') {
       targetValidateRuleItem.notice = targetValidateRuleItem.notice(label);
     }
+    // 配置中的 message 可覆盖预定义规则的默认提示
+    if (sourceValidateItem.message) {
+      targetValidateRuleItem.notice = sourceValidateItem.message;
+    }
     return targetValidateRuleItem;
   };
-  //获取给组件watch配置中的handle方法使用的参数
+
   const getWatchHandleArgs = (keys) => {
     const watchHandleArgs = {
       optionsInfo: Object.entries(formEleComponentOptionsInfo).reduce((newObj, [key, value]) => {
@@ -126,12 +156,13 @@ const useAdvForm = (
     });
     return watchHandleArgs;
   };
-  //获取给vue watch方法使用的参数
+
   const getWatchSetting = (key, sourceWatchConfig, vueWatchHandleFn) => {
     const targetWatchConfig = {
       keys: [],
       handle: null,
     };
+    let watchSetting;
     if (typeof sourceWatchConfig === 'string') {
       const keyNameRegex = /[a-zA-Z_$][a-zA-Z0-9_$]*/g;
       const allMatches = sourceWatchConfig.match(keyNameRegex) || [];
@@ -141,6 +172,12 @@ const useAdvForm = (
         `{${targetWatchConfig.keys.join(',')}}`,
         `return ${sourceWatchConfig}`
       );
+      watchSetting = [
+        computed(() => targetWatchConfig.keys.map((key) => formDataState[key])),
+        () => {
+          vueWatchHandleFn(key, targetWatchConfig.keys, targetWatchConfig.handle);
+        },
+      ];
     } else if (sourceWatchConfig.keys) {
       if (typeof sourceWatchConfig.keys === 'string') {
         targetWatchConfig.keys.push(sourceWatchConfig.keys);
@@ -156,15 +193,19 @@ const useAdvForm = (
           `return ${targetWatchConfig.keys.join('&&')}`
         );
       }
+      watchSetting = [
+        computed(() => targetWatchConfig.keys.map((key) => formDataState[key])),
+        () => {
+          vueWatchHandleFn(key, targetWatchConfig.keys, targetWatchConfig.handle);
+        },
+      ];
+      if (sourceWatchConfig?.option) {
+        watchSetting.push(sourceWatchConfig.option);
+      }
     }
-    const watchSetting = [
-      computed(() => targetWatchConfig.keys.map((key) => formDataState[key])),
-      () => {
-        vueWatchHandleFn(key, targetWatchConfig.keys, targetWatchConfig.handle);
-      },
-    ];
     return watchSetting;
   };
+
   const updateFormDataState = (key, value) => {
     currentInputKey = key;
     let realValue = value;
@@ -186,7 +227,7 @@ const useAdvForm = (
       formDataState[key] = realValue;
     }
   };
-  //表单项显隐watch处理方法
+
   const formEleItemShowChangeFn = (key, watchKeys, handle) => {
     const isShow = handle(getWatchHandleArgs(watchKeys));
     if (!isShow) {
@@ -194,7 +235,7 @@ const useAdvForm = (
     }
     formEleComponentShowInfo.value[key] = isShow;
   };
-  //表单项options watch处理方法
+
   const formEleItemOptionsChangeFn = (key, watchKeys, handle) => {
     const handleArgs = getWatchHandleArgs(watchKeys);
     if (getVarType(handle) === 'asyncFunction') {
@@ -207,9 +248,11 @@ const useAdvForm = (
       formEleComponentOptionsInfo[key].value = handle(handleArgs);
     }
   };
+
   const formEleItemBindValueChangeFn = (key, watchKeys, handle) => {
     updateFormDataState(key, handle(getWatchHandleArgs(watchKeys)));
   };
+
   const formEleItemValidateChangeFn = (key, watchKeys, handle) => {
     const newValidateRules = handle(getWatchHandleArgs(watchKeys));
     if (newValidateRules) {
@@ -222,46 +265,151 @@ const useAdvForm = (
       Reflect.deleteProperty(validateRules.value, key);
     }
   };
+
   const setFormItemWatch = (sourceFormItem) => {
     const formItemKey = sourceFormItem.key;
-    //处理显隐
+    // 控制表单项显隐
     if (sourceFormItem?.show) {
-      formEleComponentShowInfo.value[sourceFormItem.key] = false;
-      const watchSetting = getWatchSetting(
-        formItemKey,
-        sourceFormItem.show,
-        formEleItemShowChangeFn
-      );
-      watchManager.setWatchInfo(formItemKey, watchSetting);
+      // 数组格式：展开为 Vue3 watch 参数 [source, callback, options?]
+      // 对 callback 进行包装，将其返回值交由 formEleItemShowChangeFn 更新属性
+      if (getVarType(sourceFormItem.show) === 'array') {
+        const [source, callback, options] = sourceFormItem.show;
+        const wrappedWatchSetting = [
+          source,
+          (newVal, oldVal) => {
+            const result = callback(newVal, oldVal);
+            formEleItemShowChangeFn(formItemKey, [], () => result);
+          },
+          options,
+        ].filter(Boolean);
+        formEleComponentShowInfo.value[formItemKey] = false;
+        watchManager.setWatchInfo(formItemKey, wrappedWatchSetting);
+      } else {
+        formEleComponentShowInfo.value[sourceFormItem.key] = false;
+        const watchSetting = getWatchSetting(
+          formItemKey,
+          sourceFormItem.show,
+          formEleItemShowChangeFn
+        );
+        watchManager.setWatchInfo(formItemKey, watchSetting);
+      }
     }
-    //处理options的变化
+    // 动态更新选项数据
     if (sourceFormItem?.options?.watch) {
-      const watchSetting = getWatchSetting(
-        formItemKey,
-        sourceFormItem.options.watch,
-        formEleItemOptionsChangeFn
-      );
-      watchManager.setWatchInfo(formItemKey, watchSetting);
+      // 数组格式：展开为 Vue3 watch 参数 [source, callback, options?]
+      // 对 callback 进行包装，将其返回值交由 formEleItemOptionsChangeFn 更新属性
+      if (getVarType(sourceFormItem.options.watch) === 'array') {
+        const [source, callback, options] = sourceFormItem.options.watch;
+        const wrappedWatchSetting = [
+          source,
+          (newVal, oldVal) => {
+            const result = callback(newVal, oldVal);
+            formEleItemOptionsChangeFn(formItemKey, [], () => result);
+          },
+          options,
+        ].filter(Boolean);
+        watchManager.setWatchInfo(formItemKey, wrappedWatchSetting);
+      } else {
+        const watchSetting = getWatchSetting(
+          formItemKey,
+          sourceFormItem.options.watch,
+          formEleItemOptionsChangeFn
+        );
+        watchManager.setWatchInfo(formItemKey, watchSetting);
+      }
     }
-    //处理值的联动
-    if (sourceFormItem?.watch) {
-      const watchSetting = getWatchSetting(
-        formItemKey,
-        sourceFormItem.watch,
-        formEleItemBindValueChangeFn
-      );
-      watchManager.setWatchInfo(formItemKey, watchSetting);
-    }
-    //处理验证规则的联动
+    // 动态更新校验规则
     if (sourceFormItem?.validate?.watch) {
-      const watchSetting = getWatchSetting(
-        formItemKey,
-        sourceFormItem.validate.watch,
-        formEleItemValidateChangeFn
-      );
-      watchManager.setWatchInfo(formItemKey, watchSetting);
+      // 数组格式：展开为 Vue3 watch 参数 [source, callback, options?]
+      // 对 callback 进行包装，将其返回值交由 formEleItemValidateChangeFn 更新属性
+      if (getVarType(sourceFormItem.validate.watch) === 'array') {
+        const [source, callback, options] = sourceFormItem.validate.watch;
+        const wrappedWatchSetting = [
+          source,
+          (newVal, oldVal) => {
+            const result = callback(newVal, oldVal);
+            formEleItemValidateChangeFn(formItemKey, [], () => result);
+          },
+          options,
+        ].filter(Boolean);
+        watchManager.setWatchInfo(formItemKey, wrappedWatchSetting);
+      } else {
+        const watchSetting = getWatchSetting(
+          formItemKey,
+          sourceFormItem.validate.watch,
+          formEleItemValidateChangeFn
+        );
+        watchManager.setWatchInfo(formItemKey, watchSetting);
+      }
+    }
+    // 动态更新表单值
+    if (sourceFormItem?.value?.watch) {
+      // 数组格式：展开为 Vue3 watch 参数 [source, callback, options?]
+      // 对 callback 进行包装，将其返回值交由 formEleItemBindValueChangeFn 更新属性
+      if (getVarType(sourceFormItem.value.watch) === 'array') {
+        const [source, callback, options] = sourceFormItem.value.watch;
+        const wrappedWatchSetting = [
+          source,
+          (newVal, oldVal) => {
+            const result = callback(newVal, oldVal);
+            formEleItemBindValueChangeFn(formItemKey, [], () => result);
+          },
+          options,
+        ].filter(Boolean);
+        watchManager.setWatchInfo(formItemKey, wrappedWatchSetting);
+      } else {
+        const watchSetting = getWatchSetting(
+          formItemKey,
+          sourceFormItem.value.watch,
+          formEleItemBindValueChangeFn
+        );
+        watchManager.setWatchInfo(formItemKey, watchSetting);
+      }
+    }
+
+    // 动态更新自定义属性
+    const watchConfig = sourceFormItem?.watch;
+    if (watchConfig) {
+      // 更新自定义属性的通用逻辑
+      const updateFormEleAttrs = (key, newValue) => {
+        if (!formEleComponentAttrsInfo[key]) {
+          formEleComponentAttrsInfo[key] = {};
+        }
+        if (getVarType(newValue) === 'object') {
+          for (const [attrKey, attrValue] of Object.entries(newValue)) {
+            if (!formEleComponentAttrsInfo[key][attrKey]) {
+              formEleComponentAttrsInfo[key][attrKey] = ref(attrValue);
+            } else {
+              formEleComponentAttrsInfo[key][attrKey].value = attrValue;
+            }
+          }
+        }
+      };
+
+      if (watchConfig.keys) {
+        // 有 keys：标准 watch 配置，通过 getWatchSetting 处理
+        const watchSetting = getWatchSetting(formItemKey, watchConfig, (key, watchKeys, handle) => {
+          const newValue = handle(getWatchHandleArgs(watchKeys));
+          updateFormEleAttrs(key, newValue);
+        });
+        watchManager.setWatchInfo(formItemKey, watchSetting);
+      } else if (getVarType(watchConfig) === 'array') {
+        // 无 keys 且为数组：展开为 Vue3 watch 参数 [source, callback, options?]
+        // 对 callback 进行包装，将其返回值更新到 formEleComponentAttrsInfo
+        const [source, callback, options] = watchConfig;
+        const wrappedWatchSetting = [
+          source,
+          (newVal, oldVal) => {
+            const result = callback(newVal, oldVal);
+            updateFormEleAttrs(formItemKey, result);
+          },
+          options,
+        ].filter(Boolean);
+        watchManager.setWatchInfo(formItemKey, wrappedWatchSetting);
+      }
     }
   };
+
   const setValidateConfig = (sourceFormItem) => {
     if (sourceFormItem.validate) {
       const targetValidateRules = [];
@@ -273,32 +421,28 @@ const useAdvForm = (
       validateRules.value[sourceFormItem.key] = targetValidateRules;
     }
   };
+
   const formItemConfigFormat = (sourceFormItem) => {
     const targetFormItem = {
       ...sourceFormItem,
     };
     const formItemKey = sourceFormItem.key;
-    //处理option列表
     if (isOwnOptionsType(sourceFormItem.type)) {
       formEleComponentOptionsInfo[formItemKey] = shallowRef([]);
       if (sourceFormItem.options) {
         if (getVarType(sourceFormItem.options) === 'asyncFunction') {
-          //option列表靠异步方法获取
           const getOptionsFn = sourceFormItem.options;
-          getOptionsFn().then((res) => {
+          getOptionsFn(formDataState).then((res) => {
             formEleComponentOptionsInfo[formItemKey].value = res;
           });
         } else if (getVarType(sourceFormItem.options) === 'function') {
-          //option列表靠同步方法获取
           const getOptionsFn = sourceFormItem.options;
-          formEleComponentOptionsInfo[formItemKey].value = getOptionsFn();
+          formEleComponentOptionsInfo[formItemKey].value = getOptionsFn(formDataState);
         } else if (getVarType(sourceFormItem.options) === 'array') {
-          //直接赋值数组
           formEleComponentOptionsInfo[formItemKey].value = sourceFormItem.options;
         }
       }
     }
-    //处理提示信息
     if (!Reflect.has(sourceFormItem, 'placeholder')) {
       switch (sourceFormItem.type) {
         case 'select':
@@ -314,14 +458,22 @@ const useAdvForm = (
         }
       }
     }
-    //UI组件属性
     if (UIAttrsTransform) {
       targetFormItem.attrs = UIAttrsTransform(targetFormItem.attrs);
     } else if (!sourceFormItem?.attrs) {
       targetFormItem.attrs = {};
     }
+
+    if (sourceFormItem.attrs) {
+      formEleComponentAttrsInfo[formItemKey] = {};
+      for (const [attrKey, attrValue] of Object.entries(sourceFormItem.attrs)) {
+        formEleComponentAttrsInfo[formItemKey][attrKey] = ref(attrValue);
+      }
+    }
+
     return targetFormItem;
   };
+
   const getFormEleComponentProps = (sourceFormItem) => {
     const key = sourceFormItem.key;
     if (!formEleComponentProps[key]) {
@@ -335,15 +487,28 @@ const useAdvForm = (
         ref: (el) => setFormItemRef(key, el),
       };
     }
+    const attrsInfo = formEleComponentAttrsInfo[key] ?? {};
+    for (const [attrKey, attrRef] of Object.entries(attrsInfo)) {
+      formEleComponentProps[key][attrKey] = attrRef.value;
+    }
     return formEleComponentProps[key];
   };
+
   const setFormEleComponentShowInfo = (sourceFormItem) => {
     formEleComponentShowInfo.value[sourceFormItem.key] = true;
   };
+
   const setFormDataState = (sourceFormItem) => {
+    if (formDataState[sourceFormItem.key] != null) return;
     let realValue = undefined;
-    if (!sourceFormItem?.watch) {
-      if (typeof sourceFormItem?.defaultValue === 'function') {
+    if (!sourceFormItem?.value?.watch) {
+      if (getVarType(sourceFormItem?.defaultValue) === 'asyncFunction') {
+        sourceFormItem.defaultValue().then((res) => {
+          if (formDataState[sourceFormItem.key] == null) {
+            formDataState[sourceFormItem.key] = res;
+          }
+        });
+      } else if (typeof sourceFormItem?.defaultValue === 'function') {
         realValue = sourceFormItem.defaultValue();
       } else if (Reflect.has(sourceFormItem, 'defaultValue')) {
         realValue = sourceFormItem.defaultValue;
@@ -351,60 +516,86 @@ const useAdvForm = (
     }
     formDataState[sourceFormItem.key] = realValue;
   };
-  const initFormRow = (formatRow) => {
-    if (formatRow.length > 2) {
-      const targetRow = [...formatRow];
-      formatRow.forEach((sourceFormItem, index) => {
-        if (index >= 2) {
-          targetRow[index] = formItemConfigFormat(sourceFormItem);
-          setFormEleComponentShowInfo(sourceFormItem);
-          setValidateConfig(sourceFormItem);
-          setFormItemWatch(sourceFormItem);
-        }
-      });
-      formItemRowList.value.push(targetRow);
+
+  // 计算最大公约数
+  const gcd = (a, b) => {
+    while (b !== 0) {
+      const temp = b;
+      b = a % b;
+      a = temp;
     }
+    return a;
   };
-  const settingStrToVLayoutAttrs = (settingStr) => {
-    const vLayoutAttrs = {};
-    const attrStrList = settingStr
-      .split(';')
-      .map((item) => item.trim())
-      .filter(Boolean);
-    attrStrList.forEach((attrStr) => {
-      const colonIndex = attrStr.indexOf(':');
-      if (colonIndex !== -1) {
-        const key = attrStr.slice(0, colonIndex).trim();
-        const value = attrStr.slice(colonIndex + 1).trim();
-        vLayoutAttrs[key] = value;
-      }
-    });
-    return vLayoutAttrs;
+
+  // 计算最小公倍数
+  const lcm = (a, b) => {
+    if (a === 0 || b === 0) return 0;
+    return (a * b) / gcd(a, b);
   };
+
+  // 计算数组的最小公倍数
+  const lcmOfArray = (arr) => {
+    return arr.reduce((acc, val) => lcm(acc, val), 1);
+  };
+
+  // 计算表格网格配置
+  const computedGridConfig = ref(null);
+
   const initForm = (sourceData) => {
     if (sourceData?.length) {
-      if (getVarType(sourceData[0]) === 'array') {
+      let allFormItems = [];
+      const isTwoDimensional = getVarType(sourceData[0]) === 'array';
+
+      if (isTwoDimensional) {
+        // 二维数组：记录每行元素个数，转换为一维
+        const rowLengthList = [];
         for (const sourceRow of sourceData) {
-          initFormRow([
-            new UUId().getNewId(),
-            { type: 'list-card', itemSize: '220px,auto', gap: '15px' },
-            ...sourceRow,
-          ]);
+          rowLengthList.push(sourceRow.length);
+          allFormItems.push(...sourceRow);
         }
-      } else if (getVarType(sourceData[0]) === 'string') {
-        initFormRow([
-          new UUId().getNewId(),
-          settingStrToVLayoutAttrs(sourceData[0]),
-          ...sourceData.slice(1),
-        ]);
+
+        // 计算最小公倍数作为总列数（仅二维数组时自动计算）
+        const totalCols = lcmOfArray(rowLengthList);
+        computedGridConfig.value = {
+          cols: `repeat(${totalCols}, 1fr)`,
+          rows: _config?.grid?.rows || 'auto',
+          gap: _config?.grid?.gap || '20px',
+        };
+
+        // 为每个表单项设置 grid.col
+        for (const sourceRow of sourceData) {
+          const rowSpan = totalCols / sourceRow.length;
+          sourceRow.forEach((item) => {
+            if (!item.grid) item.grid = {};
+            item.grid.col = `span ${rowSpan}`;
+          });
+        }
       } else {
-        for (const sourceFormItem of sourceData) {
-          initFormRow([new UUId().getNewId(), null, sourceFormItem]);
-        }
+        // 一维数组：使用用户配置的 grid，不自动计算
+        allFormItems.push(...sourceData);
+
+        // 一维数组时，使用用户配置或默认值（默认一行一个）
+        computedGridConfig.value = {
+          cols: _config?.grid?.cols || 'repeat(1, 1fr)',
+          rows: _config?.grid?.rows || 'auto',
+          gap: _config?.grid?.gap || '16px',
+        };
       }
+
+      // 处理所有表单项（废弃行概念，直接扁平化）
+      allFormItems.forEach((sourceFormItem) => {
+        const formattedItem = formItemConfigFormat(sourceFormItem);
+        setFormEleComponentShowInfo(sourceFormItem);
+        setValidateConfig(sourceFormItem);
+        setFormItemWatch(sourceFormItem);
+        setFormDataState(sourceFormItem);
+        formItemRowList.value.push(formattedItem);
+      });
+
       watchManager.registerWatch();
     }
   };
+
   const submit = () => {
     return new Promise((res, rej) => {
       formRef.value
@@ -416,7 +607,11 @@ const useAdvForm = (
             if (formItemHasDataTransform(key)) {
               realValue = formItem.set(sourceValue);
             } else {
-              if (Array.isArray(sourceValue)) {
+              if (sourceValue instanceof File || sourceValue instanceof Blob) {
+                // File/Blob 对象的属性都是不可枚举的原型属性，
+                // { ...file } 会得到空对象，必须直接保留原始引用
+                realValue = sourceValue;
+              } else if (Array.isArray(sourceValue)) {
                 realValue = [...sourceValue];
               } else if (typeof sourceValue === 'object') {
                 realValue = { ...sourceValue };
@@ -436,6 +631,7 @@ const useAdvForm = (
         });
     });
   };
+
   const clearFormData = () => {
     for (const key of Object.keys(formDataState)) {
       const formItem = formItemRowList.value.find((i) => i.key === key);
@@ -454,14 +650,15 @@ const useAdvForm = (
       }
     }
   };
-  initForm(config.value.list);
+
+  initForm(_config.list);
 
   onUnmounted(() => {
     watchManager.clear();
   });
 
   const submitButtonClickHandler = () => {
-    submit().catch(() => {}); //避免浏览器控制台报错
+    submit().catch(() => {});
   };
 
   const defineExposeConfig = {
@@ -477,13 +674,50 @@ const useAdvForm = (
     getFormEleComponentProps,
     formEleComponentShowInfo: formEleComponentShowInfo,
     formEleComponentOptionsInfo: formEleComponentOptionsInfo,
+    formEleComponentAttrsInfo: formEleComponentAttrsInfo,
     setFormItemRef,
     getFormItemRef,
     submit,
     submitButtonClickHandler,
     clearFormData,
     defineExposeConfig,
+    computedGridConfig,
   };
 };
 
-export { useAdvForm, advFormProps, advFormEmits };
+/**
+ * 创建数字类型输入过滤器
+ * 用于 phone / intNumber / number 类型，阻止非数字字符输入
+ *
+ * @param {'phone'|'intNumber'|'number'} type - 输入类型
+ * @returns {{ filterFn: (value: any) => string, maxlength?: number }}
+ */
+const createNumberInputFilter = (type) => {
+  switch (type) {
+    case 'phone':
+      return {
+        filterFn: (value) => String(value ?? '').replace(/\D/g, '').slice(0, 11),
+        maxlength: 11,
+      };
+    case 'intNumber':
+      return {
+        filterFn: (value) => String(value ?? '').replace(/\D/g, ''),
+      };
+    case 'number':
+      return {
+        filterFn: (value) => {
+          let str = String(value ?? '').replace(/[^\d.]/g, '');
+          // 只保留第一个小数点
+          const dotIndex = str.indexOf('.');
+          if (dotIndex !== -1) {
+            str = str.substring(0, dotIndex + 1) + str.substring(dotIndex + 1).replace(/\./g, '');
+          }
+          return str;
+        },
+      };
+    default:
+      return { filterFn: (value) => String(value ?? '') };
+  }
+};
+
+export { useAdvForm, advFormProps, advFormEmits, createNumberInputFilter };

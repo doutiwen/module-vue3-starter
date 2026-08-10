@@ -1,1 +1,1 @@
-export { default } from './core/ele/index.vue';
+export { default } from './core/ele/index.jsx';

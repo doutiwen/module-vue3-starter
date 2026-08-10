@@ -164,6 +164,7 @@
     "r": true,
     "s": true,
     "checkAuthState": true,
-    "UUIdNew": true
+    "UUIdNew": true,
+    "ElMessageBox": true
   }
 }

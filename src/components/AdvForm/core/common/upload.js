@@ -1,6 +1,9 @@
+import { ref, computed } from 'vue';
+import { ElMessage } from 'element-plus';
+
 const uploadProps = {
-  moduleValue: {
-    type: [Object, Array],
+  modelValue: {
+    type: [Object, Array, String],
   },
   limitType: {
     type: [String, Array],
@@ -10,7 +13,6 @@ const uploadProps = {
     default: 1,
   },
   limitSize: {
-    //单位为KB,1024为1M
     type: Number,
     default: 2048,
   },
@@ -26,29 +28,28 @@ const uploadProps = {
     type: Function,
   },
 };
-const uploadEmits = ['update:moduleValue'];
+
+const uploadEmits = ['update:modelValue'];
 
 const useUpload = (props, emits) => {
-  const imgTypeExts = ['.jpg', '.png', '.jpeg', '.gif'];
+  const imgTypeExts = ['.jpg', '.png', '.jpeg', '.gif', '.bmp', '.webp'];
+
   const _limitType = computed(() => {
     const typeList = [];
     let hasImg = false;
     if (!props.limitType) {
       hasImg = true;
     } else {
-      if (Array.isArray(props.limitType)) {
-        props.limitType.foreach((i) => {
-          if (i === 'img') {
-            hasImg = true;
-          } else {
-            typeList.push(`.${i}`);
-          }
-        });
-      } else if (typeof props.limitType === 'string') {
-        if (props.limitType === 'img') {
+      const sourceTypeList = Array.isArray(props.limitType)
+        ? props.limitType
+        : typeof props.limitType === 'string'
+          ? [props.limitType]
+          : [];
+      for (const item of sourceTypeList) {
+        if (item === 'img') {
           hasImg = true;
         } else {
-          typeList.push(`.${props.limitType}`);
+          typeList.push(`.${item}`);
         }
       }
     }
@@ -57,8 +58,14 @@ const useUpload = (props, emits) => {
     }
     return typeList;
   });
+
   const limitTypeString = computed(() => _limitType.value.join(','));
+
+  /** el-upload 组件引用（用于移除校验不通过的文件等操作） */
+  const uploadRef = ref();
+
   const showPreviewModal = ref(false);
+
   const previewInfo = ref({
     title: '详情',
     data: null,
@@ -80,7 +87,7 @@ const useUpload = (props, emits) => {
 
   const formatFileSize = (Kbytes, decimal = 2) => {
     if (!Kbytes || isNaN(Kbytes)) return '0B';
-    const units = [/* 'B',  */ 'KB', 'MB', 'GB']; //从KB开始
+    const units = ['KB', 'MB', 'GB'];
     let size = Kbytes;
     let unitIndex = 0;
     while (size >= 1024 && unitIndex < units.length - 1) {
@@ -89,6 +96,7 @@ const useUpload = (props, emits) => {
     }
     return `${size.toFixed(decimal)}${units[unitIndex]}`;
   };
+
   const maxSizeString = computed(() => {
     return formatFileSize(props.limitSize);
   });
@@ -119,62 +127,80 @@ const useUpload = (props, emits) => {
       notice: allNotice,
     };
   };
-  const _moduleValue = computed({
-    get: () => {
-      if (Array.isArray(props.moduleValue)) {
-        return props.moduleValue;
-      } else if (typeof props.moduleValue === 'object') {
-        return [props.moduleValue];
-      } else {
-        return [];
-      }
-    },
-    set: (val) => {
-      if (val) {
-        if (Array.isArray(val)) {
-          return props.moduleValue;
-        } else if (typeof props.moduleValue === 'object') {
-          return [props.moduleValue];
-        }
-      } else {
-        emits('update:moduleValue', val);
-      }
-    },
+
+  /**
+   * 归一化绑定值，作为 el-upload 的 file-list 数据源
+   * 支持：文件列表数组 / 单个文件对象 / URL 字符串（回显场景）
+   */
+  const _moduleValue = computed(() => {
+    if (Array.isArray(props.modelValue)) {
+      return props.modelValue;
+    } else if (typeof props.modelValue === 'object' && props.modelValue) {
+      return [props.modelValue];
+    } else if (typeof props.modelValue === 'string' && props.modelValue) {
+      return [{ name: 'upload', url: props.modelValue }];
+    }
+    return [];
   });
 
-  const editUploadItemHandler = (file) => {};
+  /**
+   * 文件变更回调（auto-upload=false 时 before-upload 不触发，校验统一放这里）
+   * 校验不通过时移除该文件（会触发 on-remove 同步模型），通过时同步模型
+   */
+  const changeUploadItemHandler = (file, fileList) => {
+    if (file.status === 'ready') {
+      const { valid, notice } = beforeUploadHandler(file.raw);
+      if (!valid) {
+        ElMessage.error(notice);
+        uploadRef.value?.handleRemove(file);
+        return;
+      }
+    }
+    emits('update:modelValue', fileList);
+  };
 
+  /** 移除文件回调，同步模型 */
+  const removeUploadItemHandler = (file, fileList) => {
+    emits('update:modelValue', fileList);
+  };
+
+  /** 超出数量上限提示 */
+  const exceedUploadItemHandler = () => {
+    ElMessage.warning(`最多只能上传 ${props.limitNum} 个文件`);
+  };
+
+  /** 点击图片预览 */
   const previewUploadItemHandler = (file) => {
-    console.log('上传预览', file);
-    const formItemKey = formItemConfig.key;
-    const uid = file.uid;
-    const uploadItem = state.formDataState.value[formItemKey].find((i) => i.uid === uid);
-    const previewInfo = state.uploadPreviewInfo.value[formItemKey];
-    previewInfo.value.name = uploadItem[Symbol.for('data')].name;
-    previewInfo.value.url = uploadItem[Symbol.for('data')].url;
-    previewInfo.value.show = true;
+    const url = file?.url || file?.response?.url;
+    if (!url) return;
+    previewInfo.value = {
+      title: '详情',
+      data: url,
+    };
+    showPreviewModal.value = true;
   };
-  const deleteUploadItemHandler = (file) => {
-    const uid = file.uid;
-    const removeIndex = state.formDataState.value[key].findIndex((i) => i.uid === uid);
-    state.formDataState.value[key].splice(removeIndex, 1);
-  };
+
+  /** 上传动作（仅在 auto-upload 被外部覆盖为 true 时触发） */
   const uploadHandler = (file) => {
     if (props.uploadFn) {
       props.uploadFn(file);
     }
   };
 
-  const defineExposeConfig = {};
+  const defineExposeConfig = {
+    uploadRef,
+  };
 
   return {
     _moduleValue,
     limitTypeString,
+    uploadRef,
     showPreviewModal,
     previewInfo,
-    editUploadItemHandler,
+    changeUploadItemHandler,
+    removeUploadItemHandler,
+    exceedUploadItemHandler,
     previewUploadItemHandler,
-    deleteUploadItemHandler,
     beforeUploadHandler,
     uploadHandler,
     defineExposeConfig,
