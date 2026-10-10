@@ -339,7 +339,7 @@
     shallowRef,
     computed,
   } from 'vue';
-  import { ElMessage, ElMessageBox } from 'element-plus';
+  import { ElMessage } from 'element-plus';
   import { useRecordList, recordListProps, recordListEmits } from '../common/recordList.js';
 
   /**
@@ -427,7 +427,6 @@
     emits,
     setFilterList,
     ElMessage.success,
-    ElMessageBox,
     renderSelectedRowCallback
   );
 

@@ -6,7 +6,7 @@
  * 供各子系统 dict/static.js 在导出 DICT_STATIC 前「先初始化公共静态字典」使用。
  *
  * 使用方式：
- *   - 既有写法（直接取数据，兼容现有代码）：import { GENDER } from '@common/dict/static'
+ *   - 既有写法（直接取数据，兼容现有代码）：import { GENDER } from '@/dict/static'
  *   - DICT_STATIC 统一用法（同步）：import { DICT_STATIC } from '@/dict/static'（各子系统文件）
  *       例如 DICT_STATIC.GENDER.value / DICT_STATIC.GENDER.getLabel('1') / DICT_STATIC.GENDER.getValue('男')
  */

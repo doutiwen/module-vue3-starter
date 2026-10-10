@@ -133,6 +133,7 @@
    * | searchParamsClear | 清空搜索参数 | 无 |
    * | search | 触发搜索 | { extraParams, tempParams } |
    * | getModalData | 获取弹窗数据 | key (弹窗标识) |
+   * | refreshList | 刷新列表（保持当前页码不变） | { tempParams } |
    */
 
   // 导入依赖
@@ -140,7 +141,7 @@
   import ToolBar from './toolBar.jsx';
   import RecordList from './recordList.vue';
   import RecordListV2 from './recordListV2.vue';
-  import Modal from '@/components/AdvModals/index.js';
+  import Modal from '@/components/AdvModal';
   import {
     useRecordsManager,
     recordsManagerProps,

@@ -5,7 +5,7 @@
  * 只对外提供注册与包装方法。各业务应用需自行引入本模块的方法，
  * 并结合各自应用的 config.js 与 api 方法完成注册与导出，例如：
  *
- *   import { registerAsyncDicts, createAsyncDictGroup } from '@common/dict/async'
+ *   import { registerAsyncDicts, createAsyncDictGroup } from '@/dict/async'
  *   import { ASYNC_DICT_CONFIGS } from './config'
  *   import { getDicDetailsData } from '@/api/system/dict'
  *

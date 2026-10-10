@@ -3,13 +3,13 @@
  *
  * 存放多子系统共用的「后端字典值 → 页面展示文案」转换方法。
  *
- * 与 @common/dict/static.js 的分工：
+ * 与 @/dict/static.js 的分工：
  *   - static.js    只维护标准字典值，如 GENDER 中的 '1'=男、'0'=女
  *   - transform.js 面向展示，额外容忍历史数据里的非标准取值（如旧值 2 表示女、
  *                  部分接口直接返回中文"男"/"女"），能识别的一律转成文案
  *
  * 使用方式：
- *   import { getGenderText } from '@common/dict/transform'
+ *   import { getGenderText } from '@/dict/transform'
  *   getGenderText(row.gender) // '男' | '女' | ''
  */
 
@@ -17,7 +17,7 @@
  * 性别展示字典
  *
  * 后端与历史数据的性别取值并不统一，在这里一次性收敛：
- *   - 数字：0=女、1=男（与 @common/dict/static.js 的 GENDER 一致）
+ *   - 数字：0=女、1=男（与 @/dict/static.js 的 GENDER 一致）
  *          2=女（历史数据遗留的旧值，仍可能有存量数据在用）
  *   - 中文：'男' / '女'（部分接口直接返回中文字符串）
  *

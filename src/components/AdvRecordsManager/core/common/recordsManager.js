@@ -109,7 +109,7 @@ const useRecordsManager = (props, attrs, emits) => {
      * @param {Function} params.callback - 搜索完成回调
      * @param {Object} params.toolBarParams - 工具栏参数
      */
-    search: ({ callback, toolBarParams }) => {
+    search: ({ callback, toolBarParams } = {}) => {
       recordListRef.value.search({ toolBarParams }).finally(() => {
         callback && callback();
       });
@@ -135,8 +135,10 @@ const useRecordsManager = (props, attrs, emits) => {
      * @param {number} pageNum - 页码
      */
     getPageBatchList: (pageNum) => {
-      const currentPageSelectedRows = toolBarRef.value.getBatchSelectList(pageNum);
-      recordListRef.value.setCurrentPageSelectedRows(currentPageSelectedRows);
+      if (toolBarRef.value) {
+        const currentPageSelectedRows = toolBarRef.value.getBatchSelectList(pageNum);
+        recordListRef.value.setCurrentPageSelectedRows(currentPageSelectedRows);
+      }
     },
     /**
      * 选中行事件
@@ -145,28 +147,32 @@ const useRecordsManager = (props, attrs, emits) => {
      * @param {number} params.pageNum - 页码
      */
     selectRows: ({ rows, pageNum }) => {
-      toolBarRef.value.editBatchSelectList(rows, pageNum);
-      emits('selectRows', toolBarRef.value.getBatchSelectList());
+      if (toolBarRef.value) {
+        toolBarRef.value.editBatchSelectList(rows, pageNum);
+        emits('selectRows', toolBarRef.value.getBatchSelectList());
+      }
     },
     /**
      * 清除批量选择状态
      */
     clearBatch: () => {
-      toolBarRef.value.clearBatchModeState();
+      toolBarRef.value?.clearBatchModeState();
     },
     /**
      * 打开弹窗
      * @param {Object} params - 弹窗参数
      */
     openModal: ({ key, data, title }) => {
-      modalRef.value.openModal(key, data, title);
+      modalRef.value?.openModal(key, data, title);
     },
     /**
-     * 获取搜索参数
-     * @param {Function} setSearchParams - 设置搜索参数回调
+     * 获取工具栏参数
+     * @param {Function} callback - 设置工具栏参数回调
      */
-    getSearchParams: (setSearchParams) => {
-      setSearchParams(toolBarRef.value.getSearchParams());
+    getToolBarParams: (callback) => {
+      if (toolBarRef.value) {
+        callback(toolBarRef.value.getToolBarParams());
+      }
     },
   };
 
@@ -175,10 +181,11 @@ const useRecordsManager = (props, attrs, emits) => {
    */
   const modalEventsHandler = {
     /**
-     * 刷新列表（弹窗操作完成后调用）
+     * 刷新列表（弹窗操作完成后调用，保持当前页码不变）
      */
     refreshRecordList: () => {
-      recordListRef.value.search();
+      // 调用 refreshList 而非 search，避免页码被重置为 1
+      recordListRef.value.refreshList();
       toolBarRef.value.clearBatchModeState();
       emits('selectRows', toolBarRef.value.getBatchSelectList());
     },
@@ -331,7 +338,7 @@ const useRecordsManager = (props, attrs, emits) => {
      * @returns {Object} 工具栏参数
      */
     getToolBarParams: () => {
-      return toolBarRef.value.getSearchParams();
+      return toolBarRef.value.getToolBarParams();
     },
     /**
      * 获取当前列表数据
@@ -382,6 +389,15 @@ const useRecordsManager = (props, attrs, emits) => {
      */
     getModalData: (key) => {
       return modalRef.value.getModalData(key);
+    },
+    /**
+     * 刷新列表（保持当前页码不变）
+     * 与 search 的区别：search 会把页码重置为 1，本方法直接复用当前分页/筛选/排序参数重新拉取，
+     * 适用于外部操作（如弹窗内新增关联数据）完成后原地刷新列表
+     * @param {Object} [tempParams] - 临时参数（仅单次调用有效，调用后不保留）
+     */
+    refreshList: (tempParams) => {
+      return recordListRef.value.refreshList(tempParams);
     },
   };
 

@@ -68,11 +68,9 @@ const toolBarEmits = [
  * @param {Object} params.config - 工具栏配置
  * @param {Function} emits - 事件发射函数
  * @param {Function} UIAttrsTransform - UI 属性转换函数
- * @param {Function} message - 消息提示方法
- * @param {Object} messageBox - 确认框对象（可选，用于替代硬编码的 ElMessageBox）
  * @returns {Object} 状态和方法集合
  */
-const useToolBar = ({ config }, emits, UIAttrsTransform, message, messageBox) => {
+const useToolBar = ({ config }, emits, UIAttrsTransform, message) => {
   /**
    * 状态管理对象
    */
@@ -97,8 +95,8 @@ const useToolBar = ({ config }, emits, UIAttrsTransform, message, messageBox) =>
     buttonLoadingInfo: ref({}),
     // 按钮禁用状态
     buttonDisableInfo: ref({}),
-    // 表单项显隐状态
-    formItemShowInfo: ref({}),
+    // 工具栏项显隐状态
+    itemShowInfo: ref({}),
     // 表单项选项状态（普通对象，属性值为 shallowRef，提高性能）
     formItemOptionsInfo: {},
     // 搜索防抖定时器（按 key 索引）
@@ -143,12 +141,12 @@ const useToolBar = ({ config }, emits, UIAttrsTransform, message, messageBox) =>
   };
 
   /**
-   * 设置表单项显隐状态
-   * @param {string} key - 表单项 key
+   * 设置工具栏项显隐状态
+   * @param {string} key - 工具栏项 key
    * @param {boolean} show - 是否显示
    */
-  const setFormItemShow = (key, show) => {
-    state.formItemShowInfo.value[key] = show;
+  const setItemShowState = (key, show) => {
+    state.itemShowInfo.value[key] = show;
   };
 
   /**
@@ -167,40 +165,41 @@ const useToolBar = ({ config }, emits, UIAttrsTransform, message, messageBox) =>
    * @param {Object} sourceItem - 原始工具栏项配置
    */
   const toolBarItemConfigFormat = (sourceItem) => {
-    // 默认显示
-    Object.assign(state.currentProcessItem, { show: true });
+    if (!Reflect.has(state.currentProcessItem, 'show')) {
+      state.currentProcessItem.show = true;
+    }
 
     // UI 属性转换
     if (state.UIAttrsTransform) {
       state.currentProcessItem.attrs = state.UIAttrsTransform(sourceItem.attrs);
     } else if (!sourceItem.attrs) {
-      // 默认样式设置
+      // 默认属性设置
       state.currentProcessItem.attrs = {};
     }
-
     // 默认事件对象
     !sourceItem.events && (state.currentProcessItem.events = {});
+  };
 
-    // 处理自定义选项类型的 options
-    if (isOwnOptionsType(sourceItem.type)) {
-      if (sourceItem.options && !Array.isArray(sourceItem.options)) {
-        if (getVarType(sourceItem.options) === 'asyncFunction') {
-          const getOptionsFn = sourceItem.options;
-          const currentProcessItem = state.currentProcessItem;
-          getOptionsFn().then((res) => {
-            setFormItemOptions(currentProcessItem.key, res);
-          });
-        } else if (getVarType(sourceItem.options) === 'function') {
-          const getOptionsFn = sourceItem.options;
-          const options = getOptionsFn();
-          state.currentProcessItem.options = options;
-        }
-      } else if (sourceItem.options && Array.isArray(sourceItem.options)) {
-        state.currentProcessItem.options = sourceItem.options;
-      } else {
-        state.currentProcessItem.options = [];
+  // 设置工具栏项显隐状态（没有watch时生效)
+  const setToolBarItemShow = (sourceItem) => {
+    if (sourceItem?.show && !sourceItem.show.watch) {
+      if (getVarType(sourceItem.show) === 'asyncFunction') {
+        setItemShowState(sourceItem.key, false);
+        sourceItem.show().then((res) => {
+          setItemShowState(sourceItem.key, res);
+        });
+      } else if (getVarType(sourceItem.show) === 'function') {
+        setItemShowState(sourceItem.key, sourceItem.show());
       }
     }
+  };
+
+  const getWatchHandleArgs = (watchKeys) => {
+    const watchHandleArgs = {};
+    for (const key of watchKeys) {
+      watchHandleArgs[key] = state.formData.value[key];
+    }
+    return watchHandleArgs;
   };
 
   /**
@@ -209,55 +208,22 @@ const useToolBar = ({ config }, emits, UIAttrsTransform, message, messageBox) =>
    */
   const setToolBarItemWatch = (sourceItem) => {
     // 显示条件监听
-    if (sourceItem.show) {
-      if (typeof sourceItem.show === 'string') {
-        if (/[><=]/.test(sourceItem.show)) {
-          // 比较表达式形式
-          const keyList = sourceItem.show.match(/(\w+)(?=<=?|>=?|==)/g);
-          const codeString = `return ${sourceItem.show.replace(
-            /(\w+)(<=?|>=?|==)/g,
-            'formData.value.$1$2'
-          )}`;
-          const watchHandle = new Function('formData', codeString);
-          const watchSetting = [
-            () => {
-              keyList.map((key) => state.formData.value[key]);
-              setFormItemShow(sourceItem.key, watchHandle(state.formData));
-            },
-          ];
-          state.watchManager.setWatchInfo(sourceItem.key, watchSetting);
-        } else {
-          // 简单字段形式
-          const key = sourceItem.show;
-          const codeString = `return !!formData.value.${sourceItem.show}`;
-          const watchHandle = new Function('formData', codeString);
-          const watchSetting = [
-            () => {
-              state.formData.value[key];
-              setFormItemShow(sourceItem.key, watchHandle(state.formData));
-            },
-          ];
-          state.watchManager.setWatchInfo(sourceItem.key, watchSetting);
-        }
-      } else if (sourceItem?.show?.watch?.keys && sourceItem?.show?.watch?.handle) {
+    if (sourceItem?.show?.watch) {
+      if (sourceItem.show.watch?.keys && sourceItem.show.watch?.handle) {
         // 对象形式（包含 watch.keys 和 watch.handle）
         const watchSetting = [
           () => {
             const watchValues = sourceItem.show.watch.keys.map((key) => state.formData.value[key]);
-            setFormItemShow(sourceItem.key, sourceItem.show.watch.handle(watchValues));
+            setItemShowState(sourceItem.key, sourceItem.show.watch.handle(watchValues));
           },
         ];
         state.watchManager.setWatchInfo(sourceItem.key, watchSetting);
-      } else if (typeof sourceItem.show === 'function') {
-        // 函数形式
-        const watchSetting = [sourceItem.show];
-        state.watchManager.setWatchInfo(sourceItem.key, watchSetting);
-      } else if (sourceItem?.show?.watch) {
-        const [watchSource, watchHandle, watchOptions] = sourceItem.disabled.watch;
+      } else if (Array.isArray(sourceItem.show.watch)) {
+        const [watchSource, watchHandle, watchOptions] = sourceItem.show.watch;
         state.watchManager.setWatchInfo(sourceItem.key, [
           watchSource,
           (n, o) => {
-            setFormItemShow(sourceItem.key, watchHandle(n, o));
+            setItemShowState(sourceItem.key, watchHandle(getWatchHandleArgs(watchSource)));
           },
           watchOptions,
         ]);
@@ -354,7 +320,7 @@ const useToolBar = ({ config }, emits, UIAttrsTransform, message, messageBox) =>
           watchSetting = [
             () => sourceItem.disabled.watch.keys.map((key) => state.formData.value[key]),
             (n, o) => {
-              watchHandle(n, o).then((res) => {
+              watchHandle(getWatchHandleArgs(sourceItem?.disabled?.watch?.keys)).then((res) => {
                 state.buttonDisableInfo.value[sourceItem.key] = res;
               });
             },
@@ -364,7 +330,9 @@ const useToolBar = ({ config }, emits, UIAttrsTransform, message, messageBox) =>
           watchSetting = [
             () => sourceItem.disabled.watch.keys.map((key) => state.formData.value[key]),
             (n, o) => {
-              state.buttonDisableInfo.value[sourceItem.key] = watchHandle(n, o);
+              state.buttonDisableInfo.value[sourceItem.key] = watchHandle(
+                getWatchHandleArgs(sourceItem?.disabled?.watch?.keys)
+              );
             },
             { immediate: true },
           ];
@@ -400,6 +368,8 @@ const useToolBar = ({ config }, emits, UIAttrsTransform, message, messageBox) =>
       switch (diffType) {
         case 'add': {
           const targetItem = state.toolBarItemDict.value[key];
+          // 初始化工具栏项显隐状态（覆盖所有类型）
+          state.itemShowInfo.value[key] = true;
           if (isFormItemType(targetItem.type)) {
             // 表单元素：设置默认值
             let realDefaultValue;
@@ -411,11 +381,35 @@ const useToolBar = ({ config }, emits, UIAttrsTransform, message, messageBox) =>
               realDefaultValue = undefined;
             }
             state.formData.value[key] = realDefaultValue;
-            // 初始化表单项显隐状态
-            state.formItemShowInfo.value[key] = true;
-            // 初始化表单项选项状态（仅自定义选项类型）
+            // 初始化表单项选项状态
             if (isOwnOptionsType(targetItem.type)) {
-              state.formItemOptionsInfo[key] = shallowRef([]);
+              let optionsState = shallowRef([]);
+              if (targetItem?.options) {
+                if (Array.isArray(targetItem.options)) {
+                  console.log(
+                    '113',
+                    targetItem.options,
+                    isRef(targetItem.options),
+                    isReactive(targetItem.options)
+                  );
+                  if (isRef(targetItem.options) || isReactive(targetItem.options)) {
+                    console.log('114', targetItem.options);
+                    optionsState = targetItem.options;
+                  } else {
+                    optionsState.value = targetItem.options;
+                  }
+                } else if (getVarType(targetItem.options) === 'asyncFunction') {
+                  const getOptionsFn = targetItem.options;
+                  getOptionsFn().then((res) => {
+                    optionsState.value = res;
+                  });
+                } else if (getVarType(targetItem.options) === 'function') {
+                  const getOptionsFn = targetItem.options;
+                  const options = getOptionsFn();
+                  optionsState.value = options;
+                }
+              }
+              state.formItemOptionsInfo[key] = optionsState;
             }
           } else if (targetItem.type === 'openMoreSearch' && targetItem.form) {
             // 更多搜索：设置表单默认值
@@ -453,6 +447,7 @@ const useToolBar = ({ config }, emits, UIAttrsTransform, message, messageBox) =>
             // openModal 和 button 类型：初始化禁用状态
             state.buttonDisableInfo.value[key] = false;
           }
+          setToolBarItemShow(targetItem);
           // 设置监听
           setToolBarItemWatch(targetItem);
           break;
@@ -463,7 +458,7 @@ const useToolBar = ({ config }, emits, UIAttrsTransform, message, messageBox) =>
           Reflect.deleteProperty(state.batchInfo.value, key);
           Reflect.deleteProperty(state.buttonLoadingInfo.value, key);
           Reflect.deleteProperty(state.buttonDisableInfo.value, key);
-          Reflect.deleteProperty(state.formItemShowInfo.value, key);
+          Reflect.deleteProperty(state.itemShowInfo.value, key);
           Reflect.deleteProperty(state.formItemOptionsInfo, key);
           // 清理搜索防抖定时器
           if (state.searchTimeDebounceTimer[key]) {
@@ -731,29 +726,30 @@ const useToolBar = ({ config }, emits, UIAttrsTransform, message, messageBox) =>
       }
       case 'confirm': {
         if (!state.buttonLoadingInfo.value[toolBarItem.key]) {
-          const noticeMsg = toolBarItem?.confirmMsg
-            ? toolBarItem?.confirmMsg
+          const noticeMsg = toolBarItem?.confirm?.text
+            ? toolBarItem?.confirm?.text
             : `是否确认${toolBarItem.text}？`;
-          const confirmBox = messageBox || ElMessageBox;
-          confirmBox
-            .confirm(noticeMsg, '提示', {
-              confirmButtonText: toolBarItem.confirm?.text || '确认',
-              cancelButtonText: toolBarItem?.cancel?.text || '取消',
-              type: 'warning',
-            })
+          ElMessageBox.confirm(noticeMsg, '提示', {
+            confirmButtonText: toolBarItem.confirm?.text || '确认',
+            cancelButtonText: toolBarItem?.cancel?.text || '取消',
+            type: 'warning',
+          })
             .then(async () => {
               if (toolBarItem?.confirm?.fn) {
                 if (getVarType(toolBarItem.confirm.fn) === 'asyncFunction') {
                   state.buttonLoadingInfo.value[toolBarItem.key] = true;
-                  try {
-                    const { refreshRecordList } = await toolBarItem.confirm.fn();
-                    refreshRecordList && emits('search');
-                  } finally {
-                    state.buttonLoadingInfo.value[toolBarItem.key] = false;
+                  const res = await toolBarItem.confirm.fn();
+                  res?.refreshRecordList && emits('search');
+                  if (res?.message && typeof message === 'function') {
+                    message(res.message);
                   }
+                  state.buttonLoadingInfo.value[toolBarItem.key] = false;
                 } else {
-                  const { refreshRecordList } = toolBarItem.confirm.fn();
-                  refreshRecordList && emits('search');
+                  const res = toolBarItem.confirm.fn();
+                  res?.refreshRecordList && emits('search');
+                  if (res?.message && typeof message === 'function') {
+                    message(res.message);
+                  }
                 }
               }
             })
@@ -854,7 +850,7 @@ const useToolBar = ({ config }, emits, UIAttrsTransform, message, messageBox) =>
     getToolBarParams,
     searchParamsClear,
     setButtonDisable,
-    setFormItemShow,
+    setItemShowState,
     setFormItemOptions,
   };
 
@@ -865,7 +861,7 @@ const useToolBar = ({ config }, emits, UIAttrsTransform, message, messageBox) =>
     batchInfo: state.batchInfo,
     buttonLoadingInfo: state.buttonLoadingInfo,
     buttonDisableInfo: state.buttonDisableInfo,
-    formItemShowInfo: state.formItemShowInfo,
+    itemShowInfo: state.itemShowInfo,
     formItemOptionsInfo: state.formItemOptionsInfo,
     currentBatchInfo: state.currentBatchInfo,
     toolBarFormItemFocusHandler,

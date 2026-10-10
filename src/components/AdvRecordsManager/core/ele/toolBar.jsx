@@ -44,7 +44,7 @@
 import { defineComponent, withModifiers } from 'vue';
 import { useToolBar, toolBarProps, toolBarEmits } from '../common/toolBar.js';
 import classes from '../common/toolBar.module.scss';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 
 export default defineComponent({
   name: 'tool-bar',
@@ -65,7 +65,7 @@ export default defineComponent({
       batchInfo,
       buttonLoadingInfo,
       buttonDisableInfo,
-      formItemShowInfo,
+      itemShowInfo,
       formItemOptionsInfo,
       currentBatchInfo,
       toolBarFormItemFocusHandler,
@@ -73,7 +73,7 @@ export default defineComponent({
       toolBarButtonClickEventHandler,
       defineExposeConfig,
       toolBarInputEnterHandler,
-    } = useToolBar(props, emit, null, ElMessage, ElMessageBox);
+    } = useToolBar(props, emit, null, ElMessage.success);
 
     /**
      * 暴露方法给父组件
@@ -116,7 +116,7 @@ export default defineComponent({
       } = tooBarItemConfig;
 
       const options = ['select', 'treeSelect', 'radio', 'checkbox'].includes(type)
-        ? (formItemOptionsInfo[key]?.value ?? configOptions)
+        ? (toValue(formItemOptionsInfo[key]) ?? configOptions)
         : configOptions;
 
       const commonProps = {
@@ -156,14 +156,18 @@ export default defineComponent({
               onFocus={toolBarFormItemFocusHandler}
               onBlur={toolBarFormItemBlurHandler}
               clearable={true}
+              fit-input-width={true}
+              filterable={true}
             >
               {options?.map((optionItem) => (
                 <el-option
                   key={optionItem.value}
-                  label={optionItem.label}
                   value={optionItem.value}
+                  label={optionItem.label}
                   {...(optionItem.optionAttrs ?? {})}
-                />
+                >
+                  <span title={optionItem.label}>{optionItem.label}</span>
+                </el-option>
               ))}
             </el-select>
           );
@@ -418,6 +422,8 @@ export default defineComponent({
               {slots[`toolBar-item-${key}`]?.() ?? text}
             </el-button>
           );
+        case 'custom':
+          return slots[`toolBar-item-custom-${key}`]?.();
         default:
           return null;
       }
@@ -454,16 +460,8 @@ export default defineComponent({
                 >
                   {toolBarItemlist.value
                     .filter((tooBarItemConfig) => {
-                      const { key, type, show, inRight } = tooBarItemConfig;
-                      const isFormType = [
-                        'input',
-                        'select',
-                        'date',
-                        'dateTime',
-                        'radio',
-                        'checkbox',
-                      ].includes(type);
-                      const shouldShow = isFormType ? formItemShowInfo.value[key] : show;
+                      const { key, type, inRight } = tooBarItemConfig;
+                      const shouldShow = itemShowInfo.value[key];
                       return shouldShow && (side === 'left' ? !inRight : inRight);
                     })
                     .map((tooBarItemConfig) => renderToolBarItem(tooBarItemConfig))}

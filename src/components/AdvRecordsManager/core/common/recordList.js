@@ -167,14 +167,21 @@ const recordListEmits = [
 ];
 
 /**
+ * 获取行的原始数据（后端返回的原样数据）
+ * formatNode 中通过 Symbol.for('originalData') 保留原始行数据，
+ * openModal 传递原样数据，由弹窗内表单/内容组件按需处理（如解密）。
+ * @param {Object} rowData - 格式化后的行节点
+ * @returns {Object} 原始行数据
+ */
+const getOriginalRowData = (rowData) => rowData?.[Symbol.for('originalData')] ?? rowData;
+
+/**
  * 表格列表核心 hook
  *
  * @param {Object} props - 组件属性
  * @param {Function} emits - 事件发射函数
  * @param {Function} setFilterList - 设置筛选列表函数
  * @param {Function} message - 消息提示方法
- * @param {Object} messageBox - 确认框对象（可选，用于替代硬编码的 ElMessageBox）
- * @param {Function} renderSelectedRowCallback - 渲染已选中行回调
  * @returns {Object} 状态和方法集合
  */
 const useRecordList = (
@@ -192,7 +199,6 @@ const useRecordList = (
   emits,
   setFilterList,
   message,
-  messageBox,
   renderSelectedRowCallback
 ) => {
   /**
@@ -234,6 +240,12 @@ const useRecordList = (
     // 当前页需要回显的选中行（跨页切换时缓存，getListData 完成后消费）
     currentPageSelectedRows: ref([]),
   };
+
+  emits('getToolBarParams', (toolBarParams) => {
+    if (toolBarParams) {
+      state.toolBarParams = toolBarParams;
+    }
+  });
 
   /**
    * 监听列配置变化，更新列列表
@@ -396,6 +408,7 @@ const useRecordList = (
     }
     targetItem[Symbol.for('index')] = siblingIndex + 1;
     targetItem[Symbol.for('level')] = level;
+    targetItem[Symbol.for('originalData')] = sourceRowItem;
     delete targetItem.children;
     let operaterCol;
 
@@ -662,12 +675,13 @@ const useRecordList = (
    * @param {*} payload - 附加参数
    */
   const operaterItemEventHandler = (operaterItem, rowData, payload) => {
+    const originalRowData = getOriginalRowData(rowData);
     switch (operaterItem.type) {
       case 'openModal': {
-        // 打开弹窗
+        // 打开弹窗（传递原样数据，由弹窗内表单解密展示）
         emits('openModal', {
           key: operaterItem.key,
-          data: rowData,
+          data: originalRowData,
         });
         break;
       }
@@ -675,18 +689,18 @@ const useRecordList = (
         // 普通按钮
         if (operaterItem?.fn) {
           if (getVarType(operaterItem.fn) === 'asyncFunction') {
-            operaterItem.fn(rowData).then(({ refreshRecordList, message: msg }) => {
+            operaterItem.fn(originalRowData).then(({ refreshRecordList, message: msg } = {}) => {
               if (msg && typeof message === 'function') {
                 message(msg);
               }
               refreshRecordList && getListData();
             });
           } else if (getVarType(operaterItem.fn) === 'function') {
-            const { refreshRecordList, message: msg } = operaterItem.fn(rowData);
-            if (msg && typeof message === 'function') {
-              message(msg);
+            const res = operaterItem.fn(originalRowData);
+            if (res?.message && typeof message === 'function') {
+              message(res.message);
             }
-            refreshRecordList && getListData();
+            res?.refreshRecordList && getListData();
           }
         }
         break;
@@ -694,22 +708,20 @@ const useRecordList = (
       case 'confirm': {
         // 确认操作 - 支持两种方式：el-popconfirm 和 ElMessageBox
         if (operaterItem.isMsgBox) {
-          // 使用消息框方式（Element Plus 或 Ant Design Vue）
-          const noticeMsg = operaterItem?.confirmMsg
-            ? operaterItem?.confirmMsg
+          // 使用 ElMessageBox 方式
+          const noticeMsg = operaterItem?.confirm?.title
+            ? operaterItem?.confirm?.title
             : `是否确认${operaterItem.text}？`;
-          const confirmBox = messageBox || ElMessageBox;
-          confirmBox
-            .confirm(noticeMsg, '提示', {
-              confirmButtonText: operaterItem.confirm?.text || '确认',
-              cancelButtonText: operaterItem?.cancel?.text || '取消',
-              type: 'warning',
-            })
+          ElMessageBox.confirm(noticeMsg, '提示', {
+            confirmButtonText: operaterItem.confirm?.text || '确认',
+            cancelButtonText: operaterItem?.cancel?.text || '取消',
+            type: 'warning',
+          })
             .then(async () => {
               if (operaterItem?.confirm?.fn) {
                 if (getVarType(operaterItem.confirm.fn) === 'asyncFunction') {
                   const { refreshRecordList, message: msg } =
-                    await operaterItem.confirm.fn(rowData);
+                    await operaterItem.confirm.fn(originalRowData);
                   if (msg && typeof message === 'function') {
                     message(msg);
                   }
@@ -725,7 +737,7 @@ const useRecordList = (
             })
             .catch((err) => {
               if (err === 'cancel') {
-                operaterItem?.cancel?.fn?.(rowData);
+                operaterItem?.cancel?.fn?.(originalRowData);
               }
             });
         } else {
@@ -734,12 +746,14 @@ const useRecordList = (
             case 'confirm': {
               if (operaterItem?.confirm.fn) {
                 if (getVarType(operaterItem.confirm.fn) === 'asyncFunction') {
-                  operaterItem.confirm.fn(rowData).then(({ refreshRecordList, message: msg }) => {
-                    if (msg && typeof message === 'function') {
-                      message(msg);
-                    }
-                    refreshRecordList && getListData();
-                  });
+                  operaterItem.confirm
+                    .fn(originalRowData)
+                    .then(({ refreshRecordList, message: msg }) => {
+                      if (msg && typeof message === 'function') {
+                        message(msg);
+                      }
+                      refreshRecordList && getListData();
+                    });
                 } else {
                   const { refreshRecordList, message: msg } = operaterItem.confirm.fn(rowData);
                   if (msg && typeof message === 'function') {
@@ -752,7 +766,7 @@ const useRecordList = (
             }
             case 'cancel': {
               if (operaterItem?.cancel?.fn) {
-                operaterItem.cancel.fn(rowData);
+                operaterItem.cancel.fn(originalRowData);
               }
               break;
             }
@@ -762,7 +776,7 @@ const useRecordList = (
       }
       case 'download': {
         // 下载操作
-        operaterItem.fn(rowData).then(({ url, name }) => {
+        operaterItem.fn(originalRowData).then(({ url, name }) => {
           download({ url, name });
         });
         break;
@@ -797,7 +811,7 @@ const useRecordList = (
             [Symbol.for('operater-formItemOperater-loading')]: true,
           });
           operaterItem
-            .fn(rowData)
+            .fn(originalRowData)
             .then((resetList) => {
               const newRowData = {};
               for (const formItemKey of Object.keys(
@@ -843,7 +857,7 @@ const useRecordList = (
         if (!columnConfig.openType || columnConfig.openType === 'modal') {
           emits('openModal', {
             key: columnConfig.modalKey,
-            data: rowData,
+            data: getOriginalRowData(rowData),
           });
         } else if (columnConfig.openType === 'window') {
           columnConfig.fn(rowData).then(({ url, name, param }) => {
@@ -860,10 +874,10 @@ const useRecordList = (
         break;
       }
       case 'openModal': {
-        // 打开弹窗（仿照 operaterItem 中的 openModal 类型）
+        // 打开弹窗（仿照 operaterItem 中的 openModal 类型，传递原样数据）
         emits('openModal', {
           key: columnConfig.key,
-          data: rowData,
+          data: getOriginalRowData(rowData),
         });
         break;
       }
@@ -925,6 +939,11 @@ const useRecordList = (
     search,
     getRecordList,
     setCurrentPageSelectedRows,
+    /**
+     * 刷新列表（保持当前页码不变）
+     * @param {Object} tempParams - 临时参数（仅单次调用有效）
+     */
+    refreshList: getListData,
   };
 
   // 返回状态和方法集合

@@ -76,8 +76,6 @@
     ElSelect,
     ElOption,
     ElPopconfirm,
-    ElMessage,
-    ElMessageBox,
   } from 'element-plus';
   import { useRecordList, recordListProps, recordListEmits } from '../common/recordList.js';
 
@@ -523,14 +521,7 @@
     search,
     getRecordList,
     defineExposeConfig,
-  } = useRecordList(
-    { ...toRefs(props), ...attrs },
-    emits,
-    null,
-    ElMessage.success,
-    ElMessageBox,
-    null
-  );
+  } = useRecordList({ ...toRefs(props), ...attrs }, emits, null, ElMessage.success, null);
 
   /**
    * 已选中的行 keys
